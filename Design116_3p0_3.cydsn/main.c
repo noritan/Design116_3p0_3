@@ -14,6 +14,12 @@
 // The size of a data packet
 #define     PACKET_SIZE         (64)
 
+// DMA Configuration for DMA_RX
+#define     DMA_RX_BYTES_PER_BURST      (1)
+#define     DMA_RX_REQUEST_PER_BURST    (1)
+#define     DMA_RX_SRC_BASE             (CYDEV_PERIPH_BASE)
+#define     DMA_RX_DST_BASE             (CYDEV_SRAM_BASE)
+
 // Command op-code for F-RAM
 enum FmCommands {
     FM_WRITE = 0x02,            // WRITE command
@@ -34,6 +40,28 @@ union FramBuffer {
 // Buffer for SPI's MOSI and MISO
 union FramBuffer    mosiBuffer;
 union FramBuffer    misoBuffer;
+
+// Variable declarations for DMA_RX
+// Move these variable declarations to the top of the function
+uint8 DMA_RX_Chan;
+uint8 DMA_RX_TD[1];
+
+void framDmaInit(void) {
+    DMA_RX_Chan = DMA_RX_DmaInitialize(
+        DMA_RX_BYTES_PER_BURST, DMA_RX_REQUEST_PER_BURST, 
+        HI16(DMA_RX_SRC_BASE), HI16(DMA_RX_DST_BASE)
+    );
+    DMA_RX_TD[0] = CyDmaTdAllocate();
+    CyDmaTdSetConfiguration(DMA_RX_TD[0],
+        sizeof misoBuffer,
+        CY_DMA_DISABLE_TD,
+        TD_INC_DST_ADR
+    );
+    CyDmaTdSetAddress(DMA_RX_TD[0],
+        LO16((uint32)SPIM_RXDATA_PTR), LO16((uint32)misoBuffer.stream)
+    );
+    CyDmaChSetInitialTd(DMA_RX_Chan, DMA_RX_TD[0]);
+}
 
 void framWriteEnable(void) {
     // assert SS
@@ -61,7 +89,7 @@ void framWritePacket(uint32 address) {
     mosiBuffer.s.addr[0] = address >> 16;
     mosiBuffer.s.addr[1] = address >>  8;
     mosiBuffer.s.addr[2] = address >>  0;
-    
+
     // Send dummy packet
     SPIM_PutArray(mosiBuffer.stream, sizeof mosiBuffer);
     
@@ -76,8 +104,6 @@ void framWritePacket(uint32 address) {
 }
 
 void framReadPacket(uint32 address) {
-    uint8       i;
-    
     // assert SS
     SS_Write(0);
     
@@ -86,7 +112,10 @@ void framReadPacket(uint32 address) {
     mosiBuffer.s.addr[0] = address >> 16;
     mosiBuffer.s.addr[1] = address >>  8;
     mosiBuffer.s.addr[2] = address >>  0;
-    
+        
+    // Enable DMA for RX
+    CyDmaChEnable(DMA_RX_Chan, 1);
+
     // Send dummy packet
     SPIM_PutArray(mosiBuffer.stream, sizeof mosiBuffer);
     
@@ -95,11 +124,6 @@ void framReadPacket(uint32 address) {
     
     // Negate SS
     SS_Write(1);
-
-    // Drop command and address part
-    for (i = 0; SPIM_GetRxBufferSize() > 0; i++) {
-        misoBuffer.stream[i] = SPIM_ReadRxData();
-    }
 }
 
 int main()
@@ -111,6 +135,7 @@ int main()
     // Initialize LCD and SPIM
     LCD_Start();
     SPIM_Start();
+    framDmaInit();
 
     CyGlobalIntEnable; /* Uncomment this line to enable global interrupts. */
     
