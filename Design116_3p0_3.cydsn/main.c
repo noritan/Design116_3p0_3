@@ -21,9 +21,19 @@ enum FmCommands {
     FM_WREN = 0x06,             // WREN command
 };
 
+// F-RAM REad/WRITE buffer structure
+union FramBuffer {
+    uint8           stream[PACKET_SIZE + 4];
+    struct {
+        uint8       command;            // op-code
+        uint8       addr[3];            // MSB to LSB
+        uint8       d[PACKET_SIZE];     // a packet of data
+    } s;
+};
+
 // Buffer for SPI's MOSI and MISO
-uint8       mosiBuffer[PACKET_SIZE];
-uint8       misoBuffer[PACKET_SIZE];
+union FramBuffer    mosiBuffer;
+union FramBuffer    misoBuffer;
 
 void framWriteEnable(void) {
     // assert SS
@@ -47,13 +57,13 @@ void framWritePacket(uint32 address) {
     SS_Write(0);
     
     // Send command and address
-    SPIM_WriteTxData(FM_WRITE);
-    SPIM_WriteTxData(address >> 16);
-    SPIM_WriteTxData(address >>  8);
-    SPIM_WriteTxData(address >>  0);
+    mosiBuffer.s.command = FM_WRITE;
+    mosiBuffer.s.addr[0] = address >> 16;
+    mosiBuffer.s.addr[1] = address >>  8;
+    mosiBuffer.s.addr[2] = address >>  0;
     
     // Send dummy packet
-    SPIM_PutArray(mosiBuffer, PACKET_SIZE);
+    SPIM_PutArray(mosiBuffer.stream, sizeof mosiBuffer);
     
     // Wait for transfer completed
     while (!(SPIM_ReadTxStatus() & SPIM_STS_SPI_IDLE)) ;
@@ -72,13 +82,13 @@ void framReadPacket(uint32 address) {
     SS_Write(0);
     
     // Send command and address
-    SPIM_WriteTxData(FM_READ);
-    SPIM_WriteTxData(address >> 16);
-    SPIM_WriteTxData(address >>  8);
-    SPIM_WriteTxData(address >>  0);
+    mosiBuffer.s.command = FM_READ;
+    mosiBuffer.s.addr[0] = address >> 16;
+    mosiBuffer.s.addr[1] = address >>  8;
+    mosiBuffer.s.addr[2] = address >>  0;
     
     // Send dummy packet
-    SPIM_PutArray(mosiBuffer, PACKET_SIZE);
+    SPIM_PutArray(mosiBuffer.stream, sizeof mosiBuffer);
     
     // Wait for transfer completed
     while (!(SPIM_ReadTxStatus() & SPIM_STS_SPI_IDLE)) ;
@@ -87,15 +97,9 @@ void framReadPacket(uint32 address) {
     SS_Write(1);
 
     // Drop command and address part
-    (void)SPIM_ReadRxData();
-    (void)SPIM_ReadRxData();
-    (void)SPIM_ReadRxData();
-    (void)SPIM_ReadRxData();
-
-    // Get received packet
-    for (i = 0; i < PACKET_SIZE; i++) {
-        misoBuffer[i] = SPIM_ReadRxData();
-    }          
+    for (i = 0; SPIM_GetRxBufferSize() > 0; i++) {
+        misoBuffer.stream[i] = SPIM_ReadRxData();
+    }
 }
 
 int main()
@@ -130,11 +134,11 @@ int main()
                     // Show the packet
                     LCD_ClearDisplay();
                     for (i = 0; i < 8; i++) {
-                        LCD_PrintHexUint8(misoBuffer[i]);
+                        LCD_PrintHexUint8(misoBuffer.s.d[i]);
                     }
                     LCD_Position(1, 0);
                     for (i = PACKET_SIZE-8; i < PACKET_SIZE; i++) {
-                        LCD_PrintHexUint8(misoBuffer[i]);
+                        LCD_PrintHexUint8(misoBuffer.s.d[i]);
                     }
                     break;
                 }
@@ -149,8 +153,8 @@ int main()
                     
                     // Set data to the buffer
                     for (i = 0; i < PACKET_SIZE; i+=2) {
-                        mosiBuffer[i] = d;
-                        mosiBuffer[i+1] = i;
+                        mosiBuffer.s.d[i] = d;
+                        mosiBuffer.s.d[i+1] = i;
                     }
                     
                     // Enable F-RAM WRITE
