@@ -100,7 +100,7 @@ void framReadPacket(uint32 address) {
 
 int main()
 {
-    uint8       d = 129;
+    uint8       d = 176;
     uint8       i;
     uint32      address = 0;
     
@@ -112,8 +112,14 @@ int main()
     
     for (;;) {
         for (;;) {
+            // Debounce delay
+            CyDelay(10);
+
             // Wait for button released
             while (!SW2_Read() || !SW3_Read()) ;
+            
+            // Debounce delay
+            CyDelay(10);
             
             for (;;) {
                 // READ operation
