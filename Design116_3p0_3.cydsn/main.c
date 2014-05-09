@@ -94,7 +94,7 @@ void framDmaInit(void) {
 
 void framWriteEnable(void) {
     // assert SS
-    SS_Write(0);
+    SS0_Write(0);
     
     // Send command
     SPIM_WriteTxData(FM_WREN);
@@ -103,7 +103,7 @@ void framWriteEnable(void) {
     while (!(SPIM_ReadRxStatus() & SPIM_STS_RX_FIFO_NOT_EMPTY)) ;
     
     // Negate SS
-    SS_Write(1);
+    SS0_Write(1);
 
     // Drop MISO data
     SPIM_ClearRxBuffer();
@@ -117,7 +117,7 @@ void framWritePacket(uint32 address) {
     mosiBuffer.s.addr[2] = address >>  0;
 
     // assert SS
-    SS_Write(0);
+    SS0_Write(0);
     
     // Enable DMA for RX
     DMA_RX_completed = 0;
@@ -134,12 +134,12 @@ void framWritePacket(uint32 address) {
     while (!DMA_RX_completed) ;
 
     // Negate SS
-    SS_Write(1);
+    SS0_Write(1);
 }
 
 void framReadPacket(uint32 address) {
     // assert SS
-    SS_Write(0);
+    SS0_Write(0);
     
     // Send command and address
     mosiBuffer.s.command = FM_READ;
@@ -162,7 +162,7 @@ void framReadPacket(uint32 address) {
     while (!DMA_RX_completed) ;
     
     // Negate SS
-    SS_Write(1);
+    SS0_Write(1);
 }
 
 CY_ISR(DMA_RX_INT_ISR) {
