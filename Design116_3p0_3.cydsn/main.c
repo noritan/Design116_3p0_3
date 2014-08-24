@@ -11,6 +11,10 @@
 */
 #include <project.h>
 
+// F-RAM Chip Attributes
+#define     FM_ADDR_BITS        (18)
+#define     FM_ADDR_MASK        ((0x00000001uL<<FM_ADDR_BITS)-1)
+
 // The size of a data packet
 #define     PACKET_SIZE         (64)
 
@@ -92,9 +96,25 @@ void framDmaInit(void) {
     CyDmaChSetInitialTd(DMA_RX_Chan, DMA_RX_TD[0]);
 }
 
-void framWriteEnable(void) {
+// Select a F-RAM chip from the address
+void framChipSelect(uint32 address) {
+    static CYCODE uint8 ss_pattern[8] = {
+        0xFE, 0xFD, 0xFB, 0xF7, 0xEF, 0xDF, 0xBF, 0x7F,
+    };
+    uint8       chip = address >> FM_ADDR_BITS;
+    
+    SS_Write(ss_pattern[chip]);
+}
+
+// Deselect all F-RAMs
+void framChipDeselect(void) {
+    SS_Write(0xFF);
+}
+
+// Send a WREN command for an address
+void framWriteEnable(uint32 address) {
     // assert SS
-    SS0_Write(0);
+    framChipSelect(address);
     
     // Send command
     SPIM_WriteTxData(FM_WREN);
@@ -103,12 +123,13 @@ void framWriteEnable(void) {
     while (!(SPIM_ReadRxStatus() & SPIM_STS_RX_FIFO_NOT_EMPTY)) ;
     
     // Negate SS
-    SS0_Write(1);
+    framChipDeselect();
 
     // Drop MISO data
     SPIM_ClearRxBuffer();
 }
 
+// Send a WRITE command for an address
 void framWritePacket(uint32 address) {
     // Send command and address
     mosiBuffer.s.command = FM_WRITE;
@@ -117,7 +138,7 @@ void framWritePacket(uint32 address) {
     mosiBuffer.s.addr[2] = address >>  0;
 
     // assert SS
-    SS0_Write(0);
+    framChipSelect(address);
     
     // Enable DMA for RX
     DMA_RX_completed = 0;
@@ -134,12 +155,13 @@ void framWritePacket(uint32 address) {
     while (!DMA_RX_completed) ;
 
     // Negate SS
-    SS0_Write(1);
+    framChipDeselect();
 }
 
+// Send a READ command for an address
 void framReadPacket(uint32 address) {
     // assert SS
-    SS0_Write(0);
+    framChipSelect(address);
     
     // Send command and address
     mosiBuffer.s.command = FM_READ;
@@ -162,7 +184,7 @@ void framReadPacket(uint32 address) {
     while (!DMA_RX_completed) ;
     
     // Negate SS
-    SS0_Write(1);
+    framChipDeselect();
 }
 
 CY_ISR(DMA_RX_INT_ISR) {
@@ -232,7 +254,7 @@ int main()
                     }
                     
                     // Enable F-RAM WRITE
-                    framWriteEnable();
+                    framWriteEnable(address);
                     
                     // Write a packet
                     framWritePacket(address);
